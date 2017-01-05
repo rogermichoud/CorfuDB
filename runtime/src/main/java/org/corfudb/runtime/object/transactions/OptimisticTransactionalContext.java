@@ -28,7 +28,8 @@ import static org.corfudb.runtime.view.ObjectsView.TRANSACTION_STREAM_ID;
  * Optimistic transactions in Corfu provide the following isolation guarantees:
  *
  * (1) Read-your-own Writes:
- *  Reads in a transaction are guaranteed to observe a write in the same transaction, if a write happens before
+ *  Reads in a transaction are guaranteed to observe a write in the same
+ *  transaction, if a write happens before
  *      the read.
  *
  * (2) Opacity:
@@ -152,7 +153,8 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
             // some work.
         }
 
-        // Now we're going to do some work to modify the object, so take the write
+        // Now we're going to do some work to modify the object, so take the
+        // write
         // lock.
         return proxy.getUnderlyingObject().write((v, o) -> {
             syncUnsafe(proxy);
@@ -209,7 +211,8 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
     }
 
     /**
-     * Commit a transaction into this transaction by merging the read/write sets.
+     * Commit a transaction into this transaction by merging the read/write
+     * sets.
      *
      * @param tc The transaction to merge.
      */
@@ -230,7 +233,7 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
     }
 
     /** Commit the transaction. If it is the last transaction in the stack,
-     * write it to the log, otherwise merge it into a nested transaction.
+     * append it to the log, otherwise merge it into a nested transaction.
      *
      * @return The address of the committed transaction.
      * @throws TransactionAbortedException  If the transaction was aborted.
@@ -280,7 +283,8 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
                         // TxResolution info:
                         // 1. snapshot timestamp
                         // 2. a map of conflict params, arranged by streamID's
-                        // 3. a map of write conflict-params, arranged by streamID's
+                        // 3. a map of write conflict-params, arranged by
+                        // streamID's
                         new TxResolutionInfo(getSnapshotTimestamp(), getReadSet(), collectWriteConflictParams())
                 );
 
