@@ -27,3 +27,8 @@ message Metadata {
     optional sfixed32 checksum = 1;
     optional sfixed32 length = 2;
 }
+
+message TrimEntry {
+    optional int32 checksum = 1;
+    optional int64 address = 2;
+}
