@@ -125,6 +125,7 @@ public class VersionLockedObject<T> {
      *
      */
     public void optimisticCommitUnsafe(long version) {
+        log.trace("tx commit on stream {}", sv.getID().getLeastSignificantBits());
         // TODO: validate the caller actually has a write lock.
         // TODO: merge the optimistic undo log into the undo log
         optimisticUndoLog.clear();
@@ -139,6 +140,7 @@ public class VersionLockedObject<T> {
      *  Unsafe, requires that the caller has acquired a write lock.
      */
     public void optimisticRollbackUnsafe() {
+        log.trace("optimistic rollback on stream {}", sv.getID().getLeastSignificantBits());
         // TODO: validate the caller actually has a write lock.
         if (!optimisticallyUndoable) {
             throw new NoRollbackException();

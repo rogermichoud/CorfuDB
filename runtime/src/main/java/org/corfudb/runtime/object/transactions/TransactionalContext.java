@@ -4,6 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Deque;
 import java.util.LinkedList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /** A class which allows access to transactional contexts, which manage
  * transactions. The static methods of this class provide access to the
@@ -20,6 +23,11 @@ public class TransactionalContext {
      */
     private static final ThreadLocal<Deque<AbstractTransactionalContext>> threadStack = ThreadLocal.withInitial(
             LinkedList<AbstractTransactionalContext>::new);
+
+    /**
+     * kludge to reduce contention
+     */
+    private static final Lock reduceConcurrencyLock = new ReentrantLock();
 
     /** Whether or not the current thread is in a nested transaction.
      *
@@ -70,6 +78,14 @@ public class TransactionalContext {
      * @return          The context which was added to the transaction stack.
      */
     public static AbstractTransactionalContext newContext(AbstractTransactionalContext context) {
+        try {
+            log.trace("TXBegin trylock");
+            reduceConcurrencyLock.tryLock(1, TimeUnit.MILLISECONDS);
+            log.trace("TXBegin has lock");
+        } catch (InterruptedException ie) {
+        }
+
+
         getTransactionStack().addFirst(context);
         return context;
     }
@@ -86,6 +102,7 @@ public class TransactionalContext {
                 getTransactionStack().notifyAll();
             }
         }
+        reduceConcurrencyLock.unlock();
         return r;
     }
 }

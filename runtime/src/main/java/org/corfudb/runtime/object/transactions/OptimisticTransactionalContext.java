@@ -66,6 +66,8 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
      * @param <T>               The type of the proxy's underlying object.
      */
     private <T> void syncUnsafe(ICorfuSMRProxyInternal<T> proxy) {
+        log.trace("tx sync stream {} to timestamp {}",
+                proxy.getStreamID().getLeastSignificantBits(), getSnapshotTimestamp());
 
         // Commonly called fields, for readability.
         final VersionLockedObject<T> object = proxy.getUnderlyingObject();
@@ -88,11 +90,15 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
             // Couldn't roll back the object, so we'll have
             // to start from scratch.
             // TODO: create a copy instead
+            log.trace("object {} is at version {}; rebuild for transaction at {}",
+                    proxy.getStreamID().getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
             proxy.resetObjectUnsafe(object);
         }
 
         // next, if the version is older than what we need
         // sync.
+        log.trace("roll object {} forward from version {} to snapshot {}",
+                proxy.getStreamID().getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
         if (object.getVersionUnsafe() < getSnapshotTimestamp()) {
             proxy.syncObjectUnsafe(proxy.getUnderlyingObject(), getSnapshotTimestamp());
         }
@@ -264,6 +270,8 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
         if (this.builder.runtime.getObjectsView().isTransactionLogging()) {
             affectedStreams.add(TRANSACTION_STREAM_ID);
         }
+
+        log.trace("attempt to commit optimistic tx from snapshot {}", getSnapshotTimestamp());
 
         // Now we obtain a conditional address from the sequencer.
         // This step currently happens all at once, and we get an

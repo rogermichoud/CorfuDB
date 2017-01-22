@@ -20,6 +20,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A view of the objects inside a Corfu instance.
@@ -159,8 +162,8 @@ public class ObjectsView extends AbstractView {
      */
     public void TXBegin() {
         TXBuild()
-                .setType(TransactionType.OPTIMISTIC) // TODO:default needs to be configurable
-                .begin();
+            .setType(TransactionType.OPTIMISTIC) // TODO:default needs to be configurable
+            .begin();
     }
 
     /** Builds a new transaction using the transaction
@@ -205,7 +208,7 @@ public class ObjectsView extends AbstractView {
      * @return The address of the transaction, if it commits.
      */
     public long TXEnd()
-            throws TransactionAbortedException {
+                    throws TransactionAbortedException {
         AbstractTransactionalContext context = TransactionalContext.getCurrentContext();
         if (context == null) {
             log.warn("Attempted to end a transaction, but no transaction active!");
