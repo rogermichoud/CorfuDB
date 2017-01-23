@@ -11,6 +11,8 @@ import org.corfudb.runtime.object.*;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
@@ -63,7 +65,6 @@ public abstract class AbstractTransactionalContext {
      */
     @Getter(lazy = true)
     private final long snapshotTimestamp = obtainSnapshotTimestamp();
-
 
     /** The address that the transaction was committed at.
      */

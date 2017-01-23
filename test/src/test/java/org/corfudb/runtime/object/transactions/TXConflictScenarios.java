@@ -1,6 +1,7 @@
 package org.corfudb.runtime.object.transactions;
 
 import com.google.common.reflect.TypeToken;
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.collections.SMRMap;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.object.CorfuSharedCounter;
@@ -20,6 +21,8 @@ import static org.assertj.core.api.Assertions.fail;
 /**
  * Created by dalia on 12/29/16.
  */
+@Slf4j
+
 public abstract class TXConflictScenarios extends AbstractTransactionContextTest {
 
     /**
@@ -340,5 +343,64 @@ public abstract class TXConflictScenarios extends AbstractTransactionContextTest
         // print stats..
         calculateRequestsPerSecond("TPS", numRecords * numThreads, startTime);
         calculateAbortRate(aborts, numRecords * numThreads);
+    }
+
+    /**
+     * create a state-machine workload with high contention
+     */
+    public void contentionTest(boolean testInterleaved)
+            throws Exception {
+
+        // populate numTasks and sharedCounters array
+        setupCounters();
+
+        long startTime = System.currentTimeMillis();
+        AtomicInteger aborts = new AtomicInteger(0);
+        Random r = new Random(PARAMETERS.SEED);
+
+        /**
+         * a block of nested transactions within two loops.
+         * each loop touches counters 0..task_num-1, fort both read/write
+         */
+        addTestStep((task_num) -> {
+            for (int ext_tx = 0; ext_tx < 1 /* PARAMETERS.NUM_ITERATIONS_VERY_LOW */; ext_tx++) {
+                //TXBegin();
+                //log.debug("start tx {}" , ext_tx);
+
+                for (int innr_tx = 0; innr_tx < 1 /* PARAMETERS.NUM_ITERATIONS_LOW */; innr_tx++) {
+                    log.warn("task {} tx {}::{} starting", task_num, ext_tx, innr_tx);
+                    TXBegin();
+                    sharedCounters.get(task_num).setValue(task_num);
+                    for (int ctr = 0; ctr < PARAMETERS.NUM_ITERATIONS_VERY_LOW; ctr++) {
+                        sharedCounters.get(r.nextInt(task_num+1)).setValue(task_num);
+
+                        assertThat(sharedCounters.get(task_num).getValue())
+                                .isLessThanOrEqualTo(task_num+1);
+                    }
+                    TXEnd();
+                    log.debug("tx {}::{} ended", ext_tx, innr_tx);
+                }
+
+                try {
+                    //TXEnd();
+                    //log.debug("end tx {}" , ext_tx);
+                    commitStatus.set(task_num, COMMITVALUE);
+                } catch (TransactionAbortedException tae) {
+                    aborts.incrementAndGet();
+                }
+            }
+        });
+
+
+        // invoke the execution engine
+        if (testInterleaved)
+            scheduleInterleaved(2 /* PARAMETERS.CONCURRENCY_SOME */, numTasks);
+        else
+            scheduleThreaded(2 /* PARAMETERS.CONCURRENCY_SOME */, numTasks, PARAMETERS.TIMEOUT_LONG);
+
+        // print stats..
+        calculateRequestsPerSecond("TPS", numTasks, startTime);
+        calculateAbortRate(aborts.get(), numTasks);
+
     }
 }

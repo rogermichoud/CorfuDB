@@ -96,4 +96,18 @@ public class OptimisticTXConcurrencyTest extends TXConflictScenarios {
 
         // no assertion, just print abort rate
     }
+
+    @Test
+    public void testContention()
+            throws Exception
+    {
+        System.out.println("test 1");
+        contentionTest(true);
+
+        //System.out.println("test 2");
+        //contentionTest(false);
+
+        // no assertion, just print abort rate
+    }
+
 }

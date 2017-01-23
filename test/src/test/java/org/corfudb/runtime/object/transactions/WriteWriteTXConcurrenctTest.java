@@ -202,7 +202,7 @@ public class WriteWriteTXConcurrenctTest extends TXConflictScenarios {
                 aborts++;
 
         assertThat(aborts)
-                .isEqualTo(falseaborts);
+                .isGreaterThan(falseaborts);
     }
 
     @Test

@@ -733,6 +733,7 @@ public class AbstractCorfuTest {
             }
         }
     }
+
     /**
      * This engine takes the testSM state machine (same as scheduleInterleaved above),
      * and executes state machines in separate threads running concurrenty.
@@ -742,14 +743,18 @@ public class AbstractCorfuTest {
      * @param numTasks specifies the desired number of state machine instances
      */
     public void scheduleThreaded(int numThreads, int numTasks)
+            throws Exception {
+        scheduleThreaded(numThreads, numTasks, PARAMETERS.TIMEOUT_NORMAL);
+    }
+
+    public void scheduleThreaded(int numThreads, int numTasks, Duration executionLimit)
             throws Exception
     {
         scheduleConcurrently(numTasks, (numTask) -> {
             for (IntConsumer step : testSM) step.accept(numTask);
         });
-        executeScheduled(numThreads, PARAMETERS.TIMEOUT_NORMAL);
+        executeScheduled(numThreads, executionLimit);
     }
-
 
     /** utilities for building a test state-machine
      *

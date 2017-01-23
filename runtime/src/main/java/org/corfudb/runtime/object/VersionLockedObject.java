@@ -125,23 +125,30 @@ public class VersionLockedObject<T> {
      *
      */
     public void optimisticCommitUnsafe(long version) {
-        log.trace("tx commit on stream {}", sv.getID().getLeastSignificantBits());
+        log.debug("tx commit on stream {}", sv.getID().getLeastSignificantBits());
         // TODO: validate the caller actually has a write lock.
         // TODO: merge the optimistic undo log into the undo log
         optimisticUndoLog.clear();
         optimisticVersion = 0;
+        optimisticallyModified = false;
         this.version = version;
         // TODO: fix the stream view pointer seek, for now
         // read will read the tx commit entry.
         sv.next();
+        modifyingContext = null;
     }
 
     /** Rollback any optimistic changes, if possible.
      *  Unsafe, requires that the caller has acquired a write lock.
      */
     public void optimisticRollbackUnsafe() {
-        log.trace("optimistic rollback on stream {}", sv.getID().getLeastSignificantBits());
+        log.debug("optimistic rollback on stream {}", sv.getID().getLeastSignificantBits());
         // TODO: validate the caller actually has a write lock.
+        if (!optimisticallyModified) {
+            log.debug("nothing to roll");
+            return;
+        }
+
         if (!optimisticallyUndoable) {
             throw new NoRollbackException();
         }

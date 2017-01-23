@@ -18,6 +18,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
@@ -53,6 +56,9 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
     private final Set<ICorfuSMRProxyInternal> modifiedProxies =
             new HashSet<>();
 
+    @Getter
+    private final Lock mTxLock = new ReentrantLock();
+
     OptimisticTransactionalContext(TransactionBuilder builder) {
         super(builder);
     }
@@ -66,7 +72,7 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
      * @param <T>               The type of the proxy's underlying object.
      */
     private <T> void syncUnsafe(ICorfuSMRProxyInternal<T> proxy) {
-        log.trace("tx sync stream {} to timestamp {}",
+        log.debug("tx sync stream {} to timestamp {}",
                 proxy.getStreamID().getLeastSignificantBits(), getSnapshotTimestamp());
 
         // Commonly called fields, for readability.
@@ -74,8 +80,19 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
         final UUID streamID = proxy.getStreamID();
 
         try {
+            OptimisticTransactionalContext oCtxt = (OptimisticTransactionalContext)
+                    object.getModifyingContextUnsafe();
+
             // If we don't own this object, roll it back
-            if (object.getModifyingContextUnsafe() != this) {
+            if (oCtxt != null && oCtxt != this) {
+                try {
+                    oCtxt.getMTxLock().tryLock(
+                            TransactionalContext.mTxDuration.toMillis(), TimeUnit.MILLISECONDS);
+                } catch (InterruptedException ie) {
+                    // it's ok, just means that we move on without the lock
+                    log.debug("tx at {} proceeds without lock");
+                }
+
                 object.optimisticRollbackUnsafe();
             }
 
@@ -84,21 +101,23 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
             if (object.getVersionUnsafe() > getSnapshotTimestamp()) {
                 // We don't yet support version rollback, but we would
                 // perform that here when we do.
+                log.debug("object {} is at version {} > transaction at {}",
+                        streamID.getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
                 throw new NoRollbackException();
             }
         } catch (NoRollbackException nre) {
             // Couldn't roll back the object, so we'll have
             // to start from scratch.
             // TODO: create a copy instead
-            log.trace("object {} is at version {}; rebuild for transaction at {}",
-                    proxy.getStreamID().getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
+            log.debug("object {} is at version {}; rebuild for transaction at {}",
+                    streamID.getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
             proxy.resetObjectUnsafe(object);
         }
 
         // next, if the version is older than what we need
         // sync.
-        log.trace("roll object {} forward from version {} to snapshot {}",
-                proxy.getStreamID().getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
+        log.debug("roll object {} forward from version {} to snapshot {}",
+                streamID.getLeastSignificantBits(), object.getVersionUnsafe(), getSnapshotTimestamp());
         if (object.getVersionUnsafe() < getSnapshotTimestamp()) {
             proxy.syncObjectUnsafe(proxy.getUnderlyingObject(), getSnapshotTimestamp());
         }
@@ -247,9 +266,21 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
     @Override
     @SuppressWarnings("unchecked")
     public long commitTransaction() throws TransactionAbortedException {
+        long ret = commitTransactionNoReleaseLock();
+
+        // now unlock this transaction's contention lock
+        getMTxLock().unlock();
+
+        return ret;
+    }
+
+    long commitTransactionNoReleaseLock() throws TransactionAbortedException {
+
+            log.debug("attempt to commit optimistic tx from snapshot {}", getSnapshotTimestamp());
 
         // If the transaction is nested, fold the transaction.
         if (TransactionalContext.isInNestedTransaction()) {
+            log.debug("tx is nested");
             getParentContext().addTransaction(this);
             commitAddress = AbstractTransactionalContext.FOLDED_ADDRESS;
             return commitAddress;
@@ -258,6 +289,7 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
         // If the write set is empty, we're done and just return
         // NOWRITE_ADDRESS.
         if (writeSet.isEmpty()) {
+            log.debug("tx has empty write-set");
             return NOWRITE_ADDRESS;
         }
 
@@ -384,11 +416,25 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
             // needs to come from the root.
             return atc.getSnapshotTimestamp();
         } else {
+            /** obtain micro-transaction lock */
+
+        /* */
+            try {
+                getMTxLock().tryLock(
+                        TransactionalContext.mTxDuration.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ie) {
+                // it's ok, just means that we move on without the lock
+                log.debug("tx at {} proceeds without lock");
+            }
+        /* */
+
+
             // Otherwise, fetch a read token from the sequencer the linearize
             // ourselves against.
             long currentTail = builder.runtime
                     .getSequencerView().nextToken(Collections.emptySet(), 0).getToken();
-            log.trace("Set first read timestamp for tx {} to {}", transactionID, currentTail);
+            log.debug("Set first read timestamp for tx {} to {}",
+                    transactionID.getLeastSignificantBits(), currentTail);
             return currentTail;
         }
     }

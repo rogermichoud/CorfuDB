@@ -2,11 +2,12 @@ package org.corfudb.runtime.object.transactions;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.Duration;
 import java.util.Deque;
 import java.util.LinkedList;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.NavigableSet;
+import java.util.NoSuchElementException;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 /** A class which allows access to transactional contexts, which manage
  * transactions. The static methods of this class provide access to the
@@ -24,10 +25,29 @@ public class TransactionalContext {
     private static final ThreadLocal<Deque<AbstractTransactionalContext>> threadStack = ThreadLocal.withInitial(
             LinkedList<AbstractTransactionalContext>::new);
 
-    /**
-     * kludge to reduce contention
+    /** A navigable set (priority queue) of contexts. The minimum context
+     * indicates how far we should try to keep the undo log up to.
      */
-    private static final Lock reduceConcurrencyLock = new ReentrantLock();
+    private static final NavigableSet<AbstractTransactionalContext> contextSet =
+            new ConcurrentSkipListSet<>();
+
+    /** MicroTransaction support:
+     * allow short-lived transactions to run without contention for this durection
+     */
+    public static final Duration mTxDuration = Duration.ofMillis(10);
+
+    /** Return the oldest snapshot active in the system, or -1L if
+     * there are no active snapshots. */
+    public static long getOldestSnapshot() {
+        if (contextSet.isEmpty()) {
+            return -1L;
+        }
+        try {
+            return contextSet.first().getSnapshotTimestamp();
+        } catch (NoSuchElementException nse) {
+            return -1L;
+        }
+    }
 
     /** Whether or not the current thread is in a nested transaction.
      *
@@ -78,14 +98,6 @@ public class TransactionalContext {
      * @return          The context which was added to the transaction stack.
      */
     public static AbstractTransactionalContext newContext(AbstractTransactionalContext context) {
-        try {
-            log.trace("TXBegin trylock");
-            reduceConcurrencyLock.tryLock(1, TimeUnit.MILLISECONDS);
-            log.trace("TXBegin has lock");
-        } catch (InterruptedException ie) {
-        }
-
-
         getTransactionStack().addFirst(context);
         return context;
     }
@@ -96,13 +108,14 @@ public class TransactionalContext {
      */
     public static AbstractTransactionalContext removeContext() {
         AbstractTransactionalContext r = getTransactionStack().pollFirst();
+        contextSet.remove(r);
+
         if (getTransactionStack().isEmpty()) {
             synchronized (getTransactionStack())
             {
                 getTransactionStack().notifyAll();
             }
         }
-        reduceConcurrencyLock.unlock();
         return r;
     }
 }
