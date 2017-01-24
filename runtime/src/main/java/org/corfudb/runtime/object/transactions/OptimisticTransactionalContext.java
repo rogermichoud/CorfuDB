@@ -88,13 +88,15 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
             // If we don't own this object, roll it back
             // to avoid interrupting short-lived micro TX, grab the lock
             if (oCtxt != null && oCtxt != this) {
+                /* */
                 try {
                     oCtxt.getMTxLock().tryLock(
                             TransactionalContext.mTxDuration.toMillis(), TimeUnit.MILLISECONDS);
                 } catch (InterruptedException ie) {
                     // it's ok, just means that we move on without the lock
-                    log.debug("tx at {} proceeds without lock");
+                    log.debug("tx at {} proceeds without lock", getSnapshotTimestamp());
                 }
+                /* */
             }
             object.optimisticRollbackUnsafe();
 
@@ -109,6 +111,7 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
             // Couldn't roll back the object, so we'll have
             // to start from scratch.
             // TODO: create a copy instead
+            log.debug("reset object {}", streamID.getLeastSignificantBits());
             proxy.resetObjectUnsafe(object);
         }
 
@@ -273,7 +276,8 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
     }
 
     long commitTransactionNoReleaseLock() throws TransactionAbortedException {
-        log.debug("attempt to commit optimistic tx from snapshot {}", getSnapshotTimestamp());
+        log.trace("attempt to commit optimistic tx from snapshot {}",
+                getSnapshotTimestamp());
 
 
         // If the transaction is nested, fold the transaction.

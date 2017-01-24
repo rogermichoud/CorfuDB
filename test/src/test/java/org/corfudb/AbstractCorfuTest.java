@@ -742,12 +742,18 @@ public class AbstractCorfuTest {
      * @param numTasks specifies the desired number of state machine instances
      */
     public void scheduleThreaded(int numThreads, int numTasks)
-            throws Exception
+            throws Exception {
+        scheduleThreaded(numThreads, numTasks, PARAMETERS.TIMEOUT_NORMAL);
+    }
+
+    public void scheduleThreaded(int numThreads, int numTasks, Duration
+            executionDuration)
+        throws Exception
     {
         scheduleConcurrently(numTasks, (numTask) -> {
             for (IntConsumer step : testSM) step.accept(numTask);
         });
-        executeScheduled(numThreads, PARAMETERS.TIMEOUT_NORMAL);
+        executeScheduled(numThreads, executionDuration);
     }
 
 

@@ -1,25 +1,24 @@
 package org.corfudb.runtime.object.transactions;
 
 import com.google.common.reflect.TypeToken;
+import lombok.extern.slf4j.Slf4j;
+import org.corfudb.runtime.collections.ISMRMap;
 import org.corfudb.runtime.collections.SMRMap;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.object.CorfuSharedCounter;
-import org.corfudb.runtime.view.ObjectOpenOptions;
-import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
 
 /**
  * Created by dalia on 12/29/16.
  */
+@Slf4j
 public abstract class TXConflictScenarios extends AbstractTransactionContextTest {
 
     /**
@@ -340,5 +339,88 @@ public abstract class TXConflictScenarios extends AbstractTransactionContextTest
         // print stats..
         calculateRequestsPerSecond("TPS", numRecords * numThreads, startTime);
         calculateAbortRate(aborts, numRecords * numThreads);
+    }
+
+    public void contentionTest(boolean testInterleaved)
+        throws Exception
+    {
+        setupCounters();
+        Random r = new Random(PARAMETERS.SEED);
+        AtomicInteger aborts = new AtomicInteger(0);
+
+        long startTime = System.currentTimeMillis();
+        addTestStep(task_num -> {
+            TXBegin();
+            for (int i = 0; i < PARAMETERS.NUM_ITERATIONS_VERY_LOW; i++) {
+                final int ctr = r.nextInt(task_num+1);
+                sharedCounters.get(ctr).setValue(task_num);
+                assertThat(sharedCounters.get(ctr).getValue())
+                        .isEqualTo(task_num);
+            }
+            try {
+                TXEnd();
+                //log.debug("tx {} commit", task_num);
+            } catch (TransactionAbortedException te) {
+                aborts.incrementAndGet();
+                log.debug("tx {} abort", task_num);
+            }
+        });
+
+        // invoke the execution engine
+        if (testInterleaved)
+            scheduleInterleaved(PARAMETERS.CONCURRENCY_TWO, numTasks);
+        else
+            scheduleThreaded(PARAMETERS.CONCURRENCY_SOME, numTasks,
+                    PARAMETERS.TIMEOUT_LONG);
+
+        // print stats..
+        calculateRequestsPerSecond("TPS", numTasks, startTime);
+        calculateAbortRate(aborts.get(), numTasks);
+    }
+
+    public void mapsContentionTest(boolean testInterleaved)
+            throws Exception
+    {
+        ArrayList<Map<Integer, Integer>> maps = new ArrayList<>();
+        final int nMaps = 20;
+        int numTasks = PARAMETERS.NUM_ITERATIONS_MODERATE;
+
+        for (int i = 0; i < nMaps; i++) {
+            maps.add((ISMRMap<Integer, Integer>) instantiateCorfuObject(
+                    new TypeToken<SMRMap<Integer, Integer>>() {},
+                    "contentionmap"+i ) );
+        }
+
+        Random r = new Random(PARAMETERS.SEED);
+        AtomicInteger aborts = new AtomicInteger(0);
+
+        long startTime = System.currentTimeMillis();
+        addTestStep(task_num -> {
+            TXBegin();
+            for (int m = 0; m < nMaps; m++) {
+                final int ctr = r.nextInt(task_num+1);
+                maps.get(m).putIfAbsent(ctr, task_num);
+                assertThat(maps.get(m).get(ctr))
+                        .isNotEqualTo(null);
+            }
+            try {
+                TXEnd();
+                //log.debug("tx {} commit", task_num);
+            } catch (TransactionAbortedException te) {
+                aborts.incrementAndGet();
+                log.debug("tx {} abort", task_num);
+            }
+        });
+
+        // invoke the execution engine
+        if (testInterleaved)
+            scheduleInterleaved(PARAMETERS.CONCURRENCY_TWO, numTasks);
+        else
+            scheduleThreaded(PARAMETERS.CONCURRENCY_SOME, numTasks,
+                    PARAMETERS.TIMEOUT_LONG);
+
+        // print stats..
+        calculateRequestsPerSecond("TPS", numTasks, startTime);
+        calculateAbortRate(aborts.get(), numTasks);
     }
 }
