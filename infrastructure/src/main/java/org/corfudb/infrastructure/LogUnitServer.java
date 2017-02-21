@@ -173,6 +173,9 @@ public class LogUnitServer extends AbstractServer {
                 r.sendResponse(ctx, msg, CorfuMsgType.ERROR_OVERWRITE.msg());
             else
                 r.sendResponse(ctx, msg, CorfuMsgType.ERROR_REPLEX_OVERWRITE.msg());
+        } catch (RuntimeException e) {
+            r.sendResponse(ctx, msg, )
+            System.out.println("haha");
         }
     }
 

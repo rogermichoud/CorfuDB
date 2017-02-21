@@ -452,11 +452,15 @@ public class StreamLogFiles implements StreamLog {
     }
 
     @Override
-    public void append(LogAddress logAddress, LogData entry) {
+    public void append(LogAddress logAddress, LogData entry) throws IOException{
+        Boolean debug = false;
         //evict the data by getting the next pointer.
         try {
             // make sure the entry doesn't currently exist...
             // (probably need a faster way to do this - high watermark?)
+            if (debug) {
+                throw new IOException("debug");
+            }
             FileHandle fh = getFileHandleForAddress(logAddress);
             if (!fh.getKnownAddresses().contains(logAddress.address)) {
                 writeRecord(fh, logAddress.address, entry);
@@ -467,7 +471,8 @@ public class StreamLogFiles implements StreamLog {
             log.trace("Disk_write[{}]: Written to disk.", logAddress);
         } catch (IOException e) {
             log.error("Disk_write[{}]: Exception", logAddress, e);
-            throw new RuntimeException(e);
+            throw e;
+//            throw new RuntimeException(e);
         }
     }
 

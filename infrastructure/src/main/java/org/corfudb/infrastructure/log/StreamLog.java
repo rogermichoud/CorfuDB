@@ -17,7 +17,7 @@ public interface StreamLog {
      * @param address
      * @param entry
      */
-    void append(LogAddress address, LogData entry);
+    void append(LogAddress address, LogData entry) throws IOException;
 
     /**
      * Given an address, read the corresponding stream entry.

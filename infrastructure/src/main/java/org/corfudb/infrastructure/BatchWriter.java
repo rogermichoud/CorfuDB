@@ -10,6 +10,7 @@ import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.runtime.exceptions.OverwriteException;
 
 import javax.annotation.Nonnull;
+import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -65,6 +66,7 @@ public class BatchWriter <K, V> implements CacheWriter<K, V>, AutoCloseable {
 
             int processed = 0;
 
+
             List<CompletableFuture> ack = new LinkedList();
             List<CompletableFuture> err = new LinkedList();
 
@@ -108,6 +110,9 @@ public class BatchWriter <K, V> implements CacheWriter<K, V>, AutoCloseable {
                     ack.add(currOp.getFuture());
                 } catch (OverwriteException e) {
                     err.add(currOp.getFuture());
+                } catch (IOException e) {
+                    currOp.getFuture().completeExceptionally(e);
+//                    throw e;
                 }
 
                 processed++;
@@ -115,6 +120,7 @@ public class BatchWriter <K, V> implements CacheWriter<K, V>, AutoCloseable {
             }
         } catch (Exception e) {
             log.error("Caught exception in the write processor {}", e);
+//            throw new RuntimeException(e);
         }
     }
 
