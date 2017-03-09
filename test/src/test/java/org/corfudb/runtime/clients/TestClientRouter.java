@@ -90,18 +90,23 @@ public class TestClientRouter implements IClientRouter {
 
     public List<TestRule> rules;
 
-    /**
-     * The optional address for this router, if set.
-     */
-    @Getter
-    @Setter
-    public String address;
-
     /** The server router endpoint this client should route to. */
     TestServerRouter serverRouter;
 
     /** A mock channel context for this connection. */
     TestChannelContext channelContext;
+
+    /**
+     * The test host that this router is routing requests for.
+     */
+    @Getter
+    String host = "testServer";
+
+    /**
+     * The test port that this router is routing requests for.
+     */
+    @Getter
+    Integer port;
 
     public TestClientRouter(TestServerRouter serverRouter) {
         clientList = new ArrayList<>();
@@ -112,6 +117,7 @@ public class TestClientRouter implements IClientRouter {
         rules = new ArrayList<>();
         this.serverRouter = serverRouter;
         channelContext = new TestChannelContext(this::handleMessage);
+        port = serverRouter.getPort();
     }
 
     private void handleMessage(Object o) {
@@ -284,6 +290,7 @@ public class TestClientRouter implements IClientRouter {
         CompletableFuture<T> cf;
         if ((cf = (CompletableFuture<T>) outstandingRequests.get(requestID)) != null) {
             cf.complete(completion);
+            outstandingRequests.remove(requestID);
         } else {
             log.warn("Attempted to complete request {}, but request not outstanding!", requestID);
         }
@@ -299,6 +306,7 @@ public class TestClientRouter implements IClientRouter {
         CompletableFuture cf;
         if ((cf = outstandingRequests.get(requestID)) != null) {
             cf.completeExceptionally(cause);
+            outstandingRequests.remove(requestID);
         } else {
             log.warn("Attempted to exceptionally complete request {}, but request not outstanding!", requestID);
         }
@@ -331,6 +339,7 @@ public class TestClientRouter implements IClientRouter {
         message.serialize(oBuf);
         oBuf.resetReaderIndex();
         CorfuMsg msg = CorfuMsg.deserialize(oBuf);
+        oBuf.release();
         return msg;
     }
 

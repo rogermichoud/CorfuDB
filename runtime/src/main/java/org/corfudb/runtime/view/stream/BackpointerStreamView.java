@@ -133,6 +133,22 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
     public void close() {}
 
 
+    protected boolean fillFromResolved(final long maxGlobal,
+                                       final QueuedStreamContext context) {
+        // There's nothing to read if we're already past maxGlobal.
+        if (maxGlobal < context.globalPointer) {
+            return false;
+        }
+        // Get the subset of the resolved queue, which starts at
+        // globalPointer and ends at maxAddress inclusive.
+        NavigableSet<Long> resolvedSet =
+                context.resolvedQueue.subSet(context.globalPointer,
+                        false, maxGlobal, true);
+        // Put those elements in the read queue
+        context.readQueue.addAll(resolvedSet);
+        return !context.readQueue.isEmpty();
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -149,6 +165,12 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
             return false;
         }
 
+        // If everything is available in the resolved
+        // queue, use it
+        if (context.maxResolution > maxAddress) {
+            return fillFromResolved(maxGlobal, context);
+        }
+
         // First, we fetch the current token (backpointer) from the sequencer.
         final long latestToken = runtime.getSequencerView()
                 .nextToken(Collections.singleton(context.id), 0)
@@ -157,6 +179,12 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
         // If the backpointer was unwritten, return, there is nothing to do
         if (latestToken == Address.NEVER_READ) {
             return false;
+        }
+
+        // If everything is available in the resolved
+        // queue, use it
+        if (context.maxResolution > latestToken) {
+            return fillFromResolved(latestToken, context);
         }
 
         // Now we start traversing backpointers, if they are available. We
@@ -193,16 +221,34 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
                     }
                 }
 
+                // If hole filling is disabled, we will retry forever.
+                if (runtime.isHoleFillingDisabled()) {
+                    int i = 0; // For exponential backoff.
+                    while (currentEntry.getType() == DataType.EMPTY) {
+                        currentEntry =
+                                runtime.getAddressSpaceView().read(currentRead);
+                        try {
+                            Thread.sleep(1 << i);
+                            i++;
+                        } catch (InterruptedException ie) {
+                            throw new RuntimeException(ie);
+                        }
+                    }
+                }
+
                 // If we STILL don't have the data, now we need to do a hole
                 // fill.
                 if (currentEntry.getType() == DataType.EMPTY) {
                     try {
                         runtime.getAddressSpaceView().fillHole(currentRead);
                         // If we reached here, our hole fill was successful.
+                        currentEntry = LogData.HOLE;
                     } catch (OverwriteException oe) {
                         // If we reached here, this means the remote client
                         // must have successfully completed the write and
                         // we can continue.
+                        currentEntry =
+                                runtime.getAddressSpaceView().read(currentRead);
                     }
                 }
 
@@ -211,10 +257,15 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
             }
 
             // If the entry contains this context's stream,
-            // and it is less than max read, we add it to the read queue.
-            if (currentEntry.containsStream(context.id) &&
-                    currentRead <= maxAddress) {
+            // we add it to the read queue.
+            if (currentEntry.containsStream(context.id)) {
                 context.readQueue.add(currentRead);
+            }
+
+            // If everything left is available in the resolved
+            // queue, use it
+            if (context.maxResolution > currentRead) {
+                return fillFromResolved(latestToken, context);
             }
 
             // Now we calculate the next entry to read.
